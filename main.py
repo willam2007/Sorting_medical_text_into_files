@@ -1,14 +1,32 @@
 import os
 import win32com.client as win32
 
-def get_text_between_words(doc, word1, word2):
-    # Получаем текст из документа между двумя указанными словами
+def get_text_between_words(doc, word1, word2, add_newline_phrases=None):
+    # Функция для получения текста из документа между двумя указанными словами
     full_text = doc.Range().Text
     start_index = full_text.find(word1)
     end_index = full_text.find(word2, start_index)
     if start_index == -1 or end_index == -1:
         return ""
-    return full_text[start_index:end_index]
+
+    text = full_text[start_index:end_index].strip()
+
+    if add_newline_phrases:
+        # Разделяем указанные записи на новые строки
+        for phrase in add_newline_phrases:
+            text = text.replace(phrase, "\n" + phrase)
+
+    return text
+
+def add_newlines_to_keywords(text):
+    # Функция для добавления переносов строк перед ключевыми словами
+    keywords = ["эффект", "терапи", "лечени", "диагноз", "осложненн", "степени тяжести",
+                "степень тяжести", "госпитализаци", "исход", "Anamnesis vitae",
+                "заболевани", "Травм", "ктомия", "осложнени", "препарат", "учет",
+                "получает", "Аллергологическ"]
+    for keyword in keywords:
+        text = text.replace(keyword, "\n" + keyword)
+    return text
 
 def create_medical_files(input_file, output_folder=None):
     # Создаем COM объект для работы с Word
@@ -22,11 +40,37 @@ def create_medical_files(input_file, output_folder=None):
     # Открываем входной файл
     doc = word.Documents.Open(input_file)
 
-    # Получаем текст для файла "Жалобы_и_история_заболевания.docx" (до слова "Status")
-    text_complaints_history = get_text_between_words(doc, "Anamnesis morbi", "Status")
+    # Получаем текст для файла "Жалобы_и_история_заболевания.docx" (от слова "Пациентка" до "Status")
+    add_newline_phrases = ["общую слабость", "головокружение", "увеличение объема живота",
+                           "желтушность кожных покровов",
+                           "приема жирной пищи", "физических нагрузок", "утомляемость", "гепатоспленомегалия",
+                           "гепатопрокторами ", "Гиперспленизм", "цирроз печени субкомпенсированный", "Болезнь Боткина",
+                           "туберкулез", "кожно-венерические", "аппендэктомия", "геморроидэктомия", "гемотрансфузия", ]
+    text_complaints_history_part1 = get_text_between_words(doc, "Пациентка", "Anamnesis", add_newline_phrases)
+    text_complaints_history_part2 = get_text_between_words(doc, "Anamnesis", "Status", add_newline_phrases)
+    text_complaints_history = text_complaints_history_part1 + "\n\n" + text_complaints_history_part2
+
+    # Добавляем переносы строк перед ключевыми словами в файле "Жалобы_и_история_заболевания.docx"
+    text_complaints_history = add_newlines_to_keywords(text_complaints_history)
+
+    # Получаем текст для файла "Опр-ИБциррПечСубкомпенс.doc" (от слова "Anamnesis vitae:" до конца файла)
+    start_index_anamnesis_vitae = text_complaints_history.find("Anamnesis vitae:")
+    if start_index_anamnesis_vitae != -1:
+        text_anamnesis_vitae = text_complaints_history[start_index_anamnesis_vitae:]
+        text_complaints_history = text_complaints_history[:start_index_anamnesis_vitae]
+
+        # Если output_folder не указан, используем папку проекта
+        if output_folder is None:
+            output_folder = os.getcwd()
+
+        # Создаем файл "Опр-ИБциррПечСубкомпенс.doc" и записываем туда вырезанный текст
+        output_filename_anamnesis_vitae = os.path.join(output_folder, "Опр-ИБциррПечСубкомпенс.doc")
+        doc_anamnesis_vitae = word.Documents.Add()
+        doc_anamnesis_vitae.Range().Text = text_anamnesis_vitae
+        doc_anamnesis_vitae.SaveAs(output_filename_anamnesis_vitae)
 
     # Получаем текст для файла "Осмотр.docx" (от слова "Осмотр Терапевта" до слова "Дежурные")
-    text_examination_part1 = get_text_between_words(doc, "Осмотр терапевта", "Дежурные")
+    text_examination_part1 = get_text_between_words(doc, "Осмотр Терапевта", "Дежурные")
     text_examination_part2 = get_text_between_words(doc, "Status", "ОАК")
     text_examination = text_examination_part1 + "\n\n" + text_examination_part2
 
@@ -34,7 +78,7 @@ def create_medical_files(input_file, output_folder=None):
     text_lab_results = get_text_between_words(doc, "ОАК", "УЗИ")
 
     # Получаем текст для файла "Инструментальные_методы.docx" (от слова "УЗИ" до слова "Осмотр Терапевта")
-    text_instrumental_methods = get_text_between_words(doc, "УЗИ", "Осмотр терапевта")
+    text_instrumental_methods = get_text_between_words(doc, "УЗИ", "Осмотр Терапевта")
 
     # Если output_folder не указан, используем папку проекта
     if output_folder is None:
@@ -70,6 +114,8 @@ def create_medical_files(input_file, output_folder=None):
     doc_examination.Close()
     doc_lab_results.Close()
     doc_instrumental_methods.Close()
+    if start_index_anamnesis_vitae != -1:
+        doc_anamnesis_vitae.Close()
     word.Quit()
 
     print("Файлы успешно созданы.")
